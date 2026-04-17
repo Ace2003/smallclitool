@@ -1,108 +1,55 @@
 <#
 .SYNOPSIS
-    CLI工具 - 输入域名或中文搜索词快速打开默认浏览器
+    Simple Web Launcher
 .DESCRIPTION
-    此脚本可以：
-    1. 输入域名（如 bing.com）直接打开对应网址
-    2. 输入中文字符（如 百度）使用默认搜索引擎搜索
-.PARAMETER InputText
-    要打开的域名或搜索词
-.PARAMETER Engine
-    指定搜索引擎 (baidu, google, bing, duckduckgo)
-.EXAMPLE
-    .\web-launcher.ps1 bing.com
-    .\web-launcher.ps1 百度
-    .\web-launcher.ps1 "天气预报" -Engine google
+    Opens default browser with domain or search term
 #>
 
-param(
-    [Parameter(Mandatory=$true, Position=0)]
-    [string]$InputText,
-    
-    [Parameter(Position=1)]
-    [ValidateSet("baidu", "google", "bing", "duckduckgo")]
-    [string]$Engine = "baidu"
-)
+param([string]$InputText)
 
-function Test-Chinese {
-    param([string]$Text)
-    $chinesePattern = '[\u4e00-\u9fa5]'
-    return [regex]::IsMatch($Text, $chinesePattern)
+if ([string]::IsNullOrWhiteSpace($InputText)) {
+    Write-Host "Usage: .\web-launcher.ps1 <domain or search term>"
+    Write-Host "Example: .\web-launcher.ps1 bing.com"
+    Write-Host "         .\web-launcher.ps1 weather"
+    exit 0
 }
 
-function Test-ValidDomain {
-    param([string]$Domain)
-    
-    if ([string]::IsNullOrWhiteSpace($Domain)) {
-        return $false
-    }
-    
-    $domainPattern = '^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+$'
-    
-    if ([regex]::IsMatch($Domain, $domainPattern)) {
-        return $true
-    }
-    
-    if ($Domain.StartsWith('www.')) {
-        $withoutWWW = $Domain.Substring(4)
-        return [regex]::IsMatch($withoutWWW, $domainPattern)
-    }
-    
-    return $false
+Write-Host "Input: $InputText"
+
+$domainPattern = '^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+$'
+$isValidDomain = [regex]::IsMatch($InputText, $domainPattern)
+
+$isUrl = $InputText.StartsWith('http://') -or $InputText.StartsWith('https://')
+
+$hasDot = $InputText.Contains('.')
+
+$chinesePattern = '[\u4e00-\u9fa5]'
+$hasChinese = [regex]::IsMatch($InputText, $chinesePattern)
+
+Write-Host "Is valid domain: $isValidDomain"
+Write-Host "Is URL: $isUrl"
+Write-Host "Has dot: $hasDot"
+Write-Host "Has Chinese: $hasChinese"
+
+$urlToOpen = ""
+
+if ($isUrl) {
+    $urlToOpen = $InputText
+    Write-Host "Detected: Full URL"
+}
+elseif ($isValidDomain) {
+    $urlToOpen = "https://$InputText"
+    Write-Host "Detected: Domain name"
+}
+else {
+    $encodedQuery = [Uri]::EscapeDataString($InputText)
+    $urlToOpen = "https://www.baidu.com/s?wd=$encodedQuery"
+    Write-Host "Detected: Search term"
 }
 
-function Test-IsUrl {
-    param([string]$Url)
-    return $Url.StartsWith('http://') -or $Url.StartsWith('https://')
-}
+Write-Host "Opening: $urlToOpen"
 
-function Get-SearchUrl {
-    param(
-        [string]$Query,
-        [string]$SearchEngine
-    )
-    
-    $encodedQuery = [Uri]::EscapeDataString($Query)
-    
-    switch ($SearchEngine) {
-        "baidu" { return "https://www.baidu.com/s?wd=$encodedQuery" }
-        "google" { return "https://www.google.com/search?q=$encodedQuery" }
-        "bing" { return "https://www.bing.com/search?q=$encodedQuery" }
-        "duckduckgo" { return "https://duckduckgo.com/?q=$encodedQuery" }
-        default { return "https://www.baidu.com/s?wd=$encodedQuery" }
-    }
-}
+Start-Process $urlToOpen
 
-function Format-Url {
-    param([string]$InputUrl)
-    
-    if (-not ($InputUrl.StartsWith('http://') -or $InputUrl.StartsWith('https://'))) {
-        return "https://$InputUrl"
-    }
-    return $InputUrl
-}
-
-try {
-    $urlToOpen = ""
-    
-    if (Test-IsUrl -Url $InputText) {
-        $urlToOpen = $InputText
-    }
-    elseif (Test-ValidDomain -Domain $InputText) {
-        $urlToOpen = Format-Url -InputUrl $InputText
-    }
-    elseif ((Test-Chinese -Text $InputText) -or (-not $InputText.Contains('.'))) {
-        $urlToOpen = Get-SearchUrl -Query $InputText -SearchEngine $Engine
-    }
-    else {
-        $urlToOpen = Format-Url -InputUrl $InputText
-    }
-    
-    Write-Host "正在打开: $urlToOpen"
-    
-    Start-Process $urlToOpen
-}
-catch {
-    Write-Error "打开浏览器失败: $($_.Exception.Message)"
-    exit 1
-}
+Write-Host "Done - browser should open now"
+Start-Sleep -Milliseconds 500
